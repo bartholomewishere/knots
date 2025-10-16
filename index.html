@@ -71,6 +71,11 @@
         <label>Zoom: <span class="value" id="zoomValue">8.0</span></label>
         <input type="range" id="zoom" min="3" max="15" step="0.5" value="8">
         
+        <label>
+            <input type="checkbox" id="showProjection" style="width: auto; margin-right: 5px;">
+            Show 2D Projection
+        </label>
+        
         <div class="info">
             💡 Drag to rotate manually<br>
             🖱️ Scroll to zoom
@@ -79,11 +84,12 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        let scene, camera, renderer, trefoilMesh;
+        let scene, camera, renderer, trefoilMesh, projectionMesh;
         let isRotating = true;
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
         let currentKnot = 'trefoil';
+        let showProjection = false;
         
         function init() {
             // Scene setup
@@ -195,6 +201,43 @@
             }
         }
         
+        function updateProjection() {
+            // Remove old projection if exists
+            if (projectionMesh) {
+                scene.remove(projectionMesh);
+                projectionMesh.geometry.dispose();
+                projectionMesh.material.dispose();
+            }
+            
+            const segments = parseInt(document.getElementById('segments').value);
+            
+            // Create projection points
+            const projectionPoints = [];
+            for (let i = 0; i <= segments; i++) {
+                const t = (i / segments) * Math.PI * 2;
+                const point3D = trefoilParametric(t);
+                
+                // Project onto XY plane (ignore Z coordinate)
+                const projectedPoint = new THREE.Vector3(point3D.x, point3D.y, -5);
+                projectionPoints.push(projectedPoint);
+            }
+            
+            const projectionCurve = new THREE.CatmullRomCurve3(projectionPoints);
+            projectionCurve.closed = true;
+            
+            // Create thinner tube for projection (shadow effect)
+            const projectionRadius = parseFloat(document.getElementById('radius').value) * 0.5;
+            const projectionGeometry = new THREE.TubeGeometry(projectionCurve, segments, projectionRadius, 16, true);
+            const projectionMaterial = new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                opacity: 0.3,
+                transparent: true
+            });
+            
+            projectionMesh = new THREE.Mesh(projectionGeometry, projectionMaterial);
+            scene.add(projectionMesh);
+        }
+        
         function createTrefoil() {
             const segments = parseInt(document.getElementById('segments').value);
             const radius = parseFloat(document.getElementById('radius').value);
@@ -228,6 +271,11 @@
             
             trefoilMesh = new THREE.Mesh(tubeGeometry, material);
             scene.add(trefoilMesh);
+            
+            // Create projection if enabled
+            if (showProjection) {
+                createProjection(curve, segments);
+            }
         }
         
         function setupControls() {
@@ -238,6 +286,7 @@
             const knotTypeSelect = document.getElementById('knotType');
             const zoomSlider = document.getElementById('zoom');
             const exportBtn = document.getElementById('exportBtn');
+            const projectionCheckbox = document.getElementById('showProjection');
             
             knotTypeSelect.addEventListener('change', (e) => {
                 currentKnot = e.target.value;
@@ -271,6 +320,21 @@
             
             exportBtn.addEventListener('click', () => {
                 exportImage();
+            });
+            
+            projectionCheckbox.addEventListener('change', (e) => {
+                showProjection = e.target.checked;
+                if (showProjection) {
+                    updateProjection();
+                } else {
+                    // Remove projection
+                    if (projectionMesh) {
+                        scene.remove(projectionMesh);
+                        projectionMesh.geometry.dispose();
+                        projectionMesh.material.dispose();
+                        projectionMesh = null;
+                    }
+                }
             });
         }
         
@@ -386,6 +450,13 @@
             if (isRotating && !isDragging && trefoilMesh) {
                 trefoilMesh.rotation.x += 0.003;
                 trefoilMesh.rotation.y += 0.005;
+            }
+            
+            // Sync projection rotation with main mesh
+            if (projectionMesh && trefoilMesh) {
+                projectionMesh.rotation.x = trefoilMesh.rotation.x;
+                projectionMesh.rotation.y = trefoilMesh.rotation.y;
+                projectionMesh.rotation.z = trefoilMesh.rotation.z;
             }
             
             renderer.render(scene, camera);
